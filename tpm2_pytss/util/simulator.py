@@ -15,11 +15,13 @@ class Simulator:
 
     HOST = "127.0.0.1"
     PORT = 2321
+    PPORT = 2322
 
-    def __init__(self, binary="tpm_server", host=None, port=None):
+    def __init__(self, binary="tpm2-simulator", host=None, port=None, pport=None):
         self.binary = binary
         self.host = host if host is not None else self.HOST
         self.port = port if port is not None else self.PORT
+        self.pport = pport if pport is not None else self.PPORT
         self.proc = None
 
     async def _create_connection_after(self, loop, delay):
@@ -95,16 +97,58 @@ class Simulator:
         # We are setting up a simulator in here, because we require the standard
         # ports. pytpm2tss does not yet support setting tctis and thus relies on
         # esys to do so.
-        self.proc = subprocess.Popen(
-            [self.binary, "-rm"], stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        atexit.register(self.stop)
+        async def doit():
+            self.proc = await asyncio.create_subprocess_exec(
+                self.binary,
+                "0",
+                "-m",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            atexit.register(self.stop)
+
+            tasks = set()
+
+            exited = asyncio.create_task(self.proc.wait())
+            tasks.add(exited)
+
+            readline = asyncio.create_task(self.proc.stdout.readline())
+            tasks.add(readline)
+
+            done = set()
+
+            print()
+            print()
+            print(tasks)
+            print()
+
+            while exited not in done:
+
+                done, _pending = await asyncio.wait(
+                    tasks, return_when=asyncio.FIRST_COMPLETED
+                )
+
+                if readline in done:
+                    line = readline.result()
+                    print(line)
+                    if line.startswith("TPM command server listening on port"):
+                        self.port = int(line.split()[-1])
+                    elif line.startswith("Platform server listening on port"):
+                        self.pport = int(line.split()[-1])
+                        break
+            try:
+                self.connect_to_simulator(timeout)
+            except TimeoutError as error:
+                raise SimulatorFailedToStart(self.output) from error
+            if self.proc.poll() is not None:
+                raise SimulatorFailedToStart(self.output)
+
+        loop = asyncio.get_event_loop()
         try:
-            self.connect_to_simulator(timeout)
-        except TimeoutError as error:
-            raise SimulatorFailedToStart(self.output) from error
-        if self.proc.poll() is not None:
-            raise SimulatorFailedToStart(self.output)
+            loop.run_until_complete(doit())
+        finally:
+            loop.close()
 
     @property
     def output(self):
@@ -116,10 +160,9 @@ class Simulator:
     def stop(self):
         atexit.unregister(self.stop)
         if self.proc is not None:
-            self.proc.stdout.close()
-            self.proc.stderr.close()
+            # self.proc.stdout.close()
             self.proc.terminate()
-            self.proc.wait()
+            os.waitpid(self.proc.pid, 0)
             self.proc = None
 
 
