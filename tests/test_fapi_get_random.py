@@ -14,8 +14,8 @@ class TestGetRandom(BaseTestFAPI):
         array = UINT8_PTR_PTR()
 
         with array:
-            self.fapi_ctx.GetRandom(length, array)
+            array = self.fapi_ctx.GetRandom(length, array)
 
-            value = to_bytearray(length, array.value)
+            value = to_bytearray(length, array)
 
             self.assertEqual(length, len(value))
