@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2019 Intel Corporation
+import json
 import inspect
 import contextlib
 from functools import partial, wraps
@@ -117,12 +118,11 @@ class BaseContextMetaClass(type):
                     # char ** arguments are always guaranteed to be NULL
                     # terminated
                     if docstring.startswith("char"):
-                        length = 0
-                        while True:
-                            if value[length] == "\0":
-                                break
-                            length += 1
-                        return_value.append(to_bytearray(length, value.value))
+                        if any(map(value.value.startswith, ["[", "{"])):
+                            try:
+                                return_value.append(json.loads(value.value))
+                            except json.decoder.JSONDecodeError:
+                                return_value.append(value.value)
                     else:
                         return_value.append(value.value)
 
