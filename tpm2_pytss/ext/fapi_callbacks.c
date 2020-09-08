@@ -5,6 +5,51 @@ static PyObject *FapiCallbacksError;
 
 static PyObject *my_callback = NULL;
 
+/* TODO make it so that we can support the folling type of syntax:
+
+	from typing import Any
+
+	def mycb(fapi_ctx (the python version of the fapi_ctx),
+			 description: str,
+			 auth: str,
+			 userData: Any):
+
+		auth_cb_ok: bool = False
+
+		print(fapi_ctx, description, auth, userData)
+		# Not sure what the body should be here either
+		if some_check():
+			auth_cb_ok = fapi_ctx.TSS2_RC_SUCCESS
+		else:
+			# Not sure here, pretty sure if failure it can be any non-success
+			# error code
+			auth_cb_ok = TSS2_BASE_RC_BAD_VALUE
+
+		return auth_cb_ok
+
+
+	myvars = {"feed": "face"}
+
+	with fapi_ctx.SetAuthCB(mycb, myvars):
+		fapi_ctx.something() ...
+
+ * I've been mostly working off of this: https://docs.python.org/3/extending/extending.html
+ *
+ * I think what needs to be done is to overwride / wrap the SetAuthCB function
+ * within binding.py or maybe util/swig.py in WrapperMetaClass so that we make
+ * sure that if the SetAuthCB function is called, it instead calls this function
+ * in this .c file.
+ *
+ * This function should take the Python function we want to call and the python
+ * data we want to pass to it when it's called.
+ *
+ * We need to make another C function with the appropricate signature which we
+ * will use as the real callback function. That function should take a struct
+ * which contains a pointer to the Python funtion and the pointer to the Python
+ * data that that functoin wants. We will use this new struct as the userData
+ * for our C function. Our C function will call the python function and return
+ * the result.
+ */
 static PyObject *
 my_set_callback(PyObject *dummy, PyObject *args)
 {
