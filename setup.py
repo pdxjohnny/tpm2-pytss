@@ -211,6 +211,9 @@ setup(
     },
     packages=find_packages(exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     ext_modules=[
+        Extension(
+            "fapi_callbacks", [os.path.join(IMPORT_NAME, "ext", "fapi_callbacks.c")]
+        ),
         PkgConfigNeededExtension(
             "{}._esys_binding".format(IMPORT_NAME),
             [os.path.join(IMPORT_NAME, "swig", "esys_binding.i")],
