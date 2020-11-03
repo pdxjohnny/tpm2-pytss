@@ -143,7 +143,7 @@ class BuildExtThenCopySWIGPy(build_ext):
     def run(self):
         super().run()
         # SWIG 4 Support
-        for fixfile in ["esys_binding.py", "fapi_binding.py"]:
+        for fixfile in ["tcti_binding.py", "esys_binding.py", "fapi_binding.py"]:
             binding_path = pathlib.Path(SELF_PATH, IMPORT_NAME, fixfile)
             binding = binding_path.read_text()
             if not "python_property = property" in binding:
@@ -212,19 +212,26 @@ setup(
     packages=find_packages(exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     ext_modules=[
         PkgConfigNeededExtension(
-            "{}._esys_binding".format(IMPORT_NAME),
-            [os.path.join(IMPORT_NAME, "swig", "esys_binding.i")],
-            pkg_config_cflags=["tss2-esys", "tss2-rc", "tss2-tctildr"],
-            pkg_config_libs=["tss2-esys", "tss2-rc", "tss2-tctildr"],
+            "{}._tcti_binding".format(IMPORT_NAME),
+            [os.path.join(IMPORT_NAME, "swig", "tcti_binding.i")],
+            pkg_config_cflags=["tss2-rc", "tss2-tctildr"],
+            pkg_config_libs=["tss2-rc", "tss2-tctildr"],
             swig_opts=["-py3", "-outdir", IMPORT_NAME],
         ),
-        PkgConfigNeededExtension(
-            "{}._fapi_binding".format(IMPORT_NAME),
-            [os.path.join(IMPORT_NAME, "swig", "fapi_binding.i")],
-            pkg_config_cflags=["tss2-fapi", "tss2-rc", "tss2-tctildr"],
-            pkg_config_libs=["tss2-fapi", "tss2-rc", "tss2-tctildr"],
-            swig_opts=["-py3", "-outdir", IMPORT_NAME],
-        ),
+        # PkgConfigNeededExtension(
+        #     "{}._esys_binding".format(IMPORT_NAME),
+        #     [os.path.join(IMPORT_NAME, "swig", "esys_binding.i")],
+        #     pkg_config_cflags=["tss2-esys", "tss2-rc", "tss2-tctildr"],
+        #     pkg_config_libs=["tss2-esys", "tss2-rc", "tss2-tctildr"],
+        #     swig_opts=["-py3", "-outdir", IMPORT_NAME],
+        # ),
+        # PkgConfigNeededExtension(
+        #     "{}._fapi_binding".format(IMPORT_NAME),
+        #     [os.path.join(IMPORT_NAME, "swig", "fapi_binding.i")],
+        #     pkg_config_cflags=["tss2-fapi", "tss2-rc", "tss2-tctildr"],
+        #     pkg_config_libs=["tss2-fapi", "tss2-rc", "tss2-tctildr"],
+        #     swig_opts=["-py3", "-outdir", IMPORT_NAME],
+        # ),
     ],
     py_modules=[IMPORT_NAME],
     cmdclass={"build_ext": BuildExtThenCopySWIGPy, "build_py": BuildSWIGPyFiles},
