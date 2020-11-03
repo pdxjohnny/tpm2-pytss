@@ -103,7 +103,36 @@ def wrap_pass_ctxp(ctx, func):
                 cls_name = docstring.split()[0] + "_PTR_PTR"
                 arg_cls = getattr(ctx.MODULE, cls_name)
                 arg = arg_cls()
+                print()
+                print("Created", arg)
+                print()
                 args.append(arg)
+
+        # CHeck if any of the arguments we were given are values that need to be
+        # made into pointers
+        # First missing argument should be ** to be allocated
+        if len(args) == len(docstring_arguments):
+            for i, docstring in enumerate(docstring_arguments):
+                arg = args[i]
+                print()
+                print(i, docstring, arg, arg.__class__.__qualname__)
+                print()
+                if "**" in docstring and not arg.__class__.__qualname__.endswith(
+                    "_PTR_PTR"
+                ):
+                    cls_name = docstring.split()[0] + "_PTR_PTR"
+                    arg_cls = getattr(ctx.MODULE, cls_name)
+                    ptr = arg_cls(arg)
+                    print()
+                    print("Pointer", arg, ptr)
+                    print()
+                    args[i] = ptr
+
+        print()
+        print(func)
+        print(docstring_arguments)
+        print(args)
+        print()
 
         result = func(ctxp, *args, **kwds)
 
@@ -141,14 +170,19 @@ def wrap_pass_ctxp(ctx, func):
                 else:
                     return_value.append(value)
 
+        # If the user disn't pass in arguments because we allocated those
+        # arguments (**) for the user, then only return those arguments we
+        # allocated.
+        if len(given_args) != len(args):
+            return_value = return_value[-(len(args) - len(given_args)) :]
+
+        print()
+        print(func)
+        print("return_value", return_value)
+        print()
+
         if len(return_value) > 1:
-            # If the user disn't pass in arguments because we allocated those
-            # arguments (**) for the user, then only return those arguments we
-            # allocated.
-            if len(given_args) != len(args):
-                return return_value[-(len(args) - len(given_args)) :]
-            else:
-                return return_value
+            return return_value
         elif len(return_value) == 1:
             return return_value[0]
         return result
