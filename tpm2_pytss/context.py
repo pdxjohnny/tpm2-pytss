@@ -116,9 +116,6 @@ def wrap_pass_ctxp(ctx, func):
                     cls_name = cls_name + "_" + "_".join(["PTR"] * docstring.count("*"))
                     arg_cls = getattr(ctx.MODULE, cls_name.upper())
                     arg = arg_cls()
-                    print()
-                    print("Created", arg)
-                    print()
                     args.append(arg)
 
         # CHeck if any of the arguments we were given are values that need to be
@@ -127,25 +124,13 @@ def wrap_pass_ctxp(ctx, func):
         if len(args) == len(docstring_arguments):
             for i, docstring in enumerate(docstring_arguments):
                 arg = args[i]
-                print()
-                print(i, docstring, arg, arg.__class__.__qualname__)
-                print()
                 if "**" in docstring and not arg.__class__.__qualname__.endswith(
                     "_PTR_PTR"
                 ):
                     cls_name = docstring.split()[0] + "_PTR_PTR"
                     arg_cls = getattr(ctx.MODULE, cls_name)
                     ptr = arg_cls(arg)
-                    print()
-                    print("Pointer", arg, ptr)
-                    print()
                     args[i] = ptr
-
-        print()
-        print(func)
-        print(docstring_arguments)
-        print(args)
-        print()
 
         result = func(ctxp, *args, **kwds)
 
@@ -188,11 +173,6 @@ def wrap_pass_ctxp(ctx, func):
         # allocated.
         if len(given_args) != len(args):
             return_value = return_value[-(len(args) - len(given_args)) :]
-
-        print()
-        print(func)
-        print("return_value", return_value)
-        print()
 
         if len(return_value) > 1:
             return return_value
