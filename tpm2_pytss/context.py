@@ -111,7 +111,7 @@ def wrap_pass_ctxp(ctx, func):
                 for i, docstring in enumerate(docstring_arguments[len(args) :]):
                     cls_name = docstring.split()[0]
                     # Handle uintN_t
-                    if cls_name.endswith("_t"):
+                    if cls_name.endswith("_t") and not cls_name.startswith("size"):
                         cls_name = cls_name[:-2]
                     cls_name = cls_name + "_" + "_".join(["PTR"] * docstring.count("*"))
                     arg_cls = getattr(ctx.MODULE, cls_name.upper())

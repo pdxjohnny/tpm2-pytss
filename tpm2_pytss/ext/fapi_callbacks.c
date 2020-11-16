@@ -1,6 +1,9 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
+#include <tss2/tss2_fapi.h>
+
+
 static PyObject *FapiCallbacksError;
 
 static PyObject *my_callback = NULL;
@@ -50,6 +53,15 @@ static PyObject *my_callback = NULL;
  * for our C function. Our C function will call the python function and return
  * the result.
  */
+TSS2_RC Fapi_CB_Auth_Proxy(
+    FAPI_CONTEXT   *context,
+    char     const *description,
+    char          **auth,
+    void           *userData)
+{
+    return TSS2_RC_SUCCESS;
+}
+
 static PyObject *
 my_set_callback(PyObject *dummy, PyObject *args)
 {
@@ -68,6 +80,14 @@ my_set_callback(PyObject *dummy, PyObject *args)
         Py_INCREF(Py_None);
         result = Py_None;
     }
+
+    printf("\n\n\nmy_set_callback\n\n\n\n");
+    if (Fapi_SetAuthCB(Fapi_CB_Auth_Proxy, (void *)temp)) {
+        PyErr_SetString(PyExc_TypeError, "TPM2Error: Failure to set auth callback");
+        return NULL;
+    }
+
+
     return result;
 }
 
@@ -90,6 +110,8 @@ fapi_callbacks_system(PyObject *self, PyObject *args)
 static PyMethodDef FapiCallbacksMethods[] = {
     {"system",  fapi_callbacks_system, METH_VARARGS,
      "Execute a shell command."},
+    {"my_set_callback",  my_set_callback, METH_VARARGS,
+     "Callback setter"},
     {NULL, NULL, 0, NULL}
 };
 
