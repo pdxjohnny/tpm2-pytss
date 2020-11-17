@@ -2,10 +2,10 @@ import random
 import hashlib
 import contextlib
 
-from tpm2_pytss.fapi_callbacks import *
 from tpm2_pytss.fapi import FAPI, FAPIDefaultConfig
 from tpm2_pytss.binding import *
 from tpm2_pytss.util.testing import BaseTestFAPI
+from tpm2_pytss.fapi_callbacks import *
 
 MSG = "Text to Sign"
 
@@ -14,11 +14,11 @@ class PyCallback(Fapi_Callback_Proxy):
     def __init__(self):
         Fapi_Callback_Proxy.__init__(self)
 
-    def run(self, object_path, discription, auth, user_data):
+    def Fapi_CB_Auth(self, object_path, discription, auth):
         breakpoint()
-        CHAR_PTR_PTR_assign(
-            a, "123"
-        )  # Since auth is a char **, this assing should work
+        CHAR_PTR_PTR_assign(auth, "123")
+        print(TSS2_RC_SUCCESS)
+        print(TSS2_RC_SUCCESS.value)
         return TSS2_RC_SUCCESS
 
 
@@ -68,10 +68,7 @@ SIGN_TEMPLATE = "sign"
 class TestSetAuthCB(BaseTestFAPI):
     def test_setauthcb(self):
         # Create an Caller instance
-        caller = example.Caller()
-
-        callback = PyCallback().__disown__()
-        caller.setCallback(callback)
+        caller = Caller()
         # caller.delCallback()
 
         self.fapi_ctx.Provision(None, None, None)
@@ -87,7 +84,7 @@ class TestSetAuthCB(BaseTestFAPI):
 
         digest = TPM2B_DIGEST(
             size=20,
-            buffer=bytearray(
+            buffer=[
                 0x67,
                 0x68,
                 0x03,
@@ -108,11 +105,16 @@ class TestSetAuthCB(BaseTestFAPI):
                 0x81,
                 0x8F,
                 0x8F,
-            ),
+            ],
         )
 
+        callback = PyCallback().__disown__()
+        caller.setCallback(callback)
+        caller.SetAuthCB_Fapi(self.fapi_ctx.ctxp)
+        # self.fapi_ctx.SetAuthCB(caller.Fapi_CB_Auth_Proxy, caller)
         # self.fapi_ctx.SetAuthCB(auth_callback, "")
-        self.fapi_ctx.SetAuthCB(caller.Fapi_CB_Auth_Proxy, caller)
+        # print(Fapi_CB_Auth, Fapi_CB_Auth_Proxy)
+        # self.fapi_ctx.SetAuthCB(Fapi_CB_Auth_Proxy, caller)
 
         signature, signatureSize, publicKey, certificate = self.fapi_ctx.Sign(
             "HS/SRK/mySignKey", None, digest.buffer, digest.size

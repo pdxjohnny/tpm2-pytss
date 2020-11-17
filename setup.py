@@ -228,6 +228,13 @@ setup(
             pkg_config_libs=["tss2-fapi", "tss2-rc", "tss2-tctildr"],
             swig_opts=["-py3", "-outdir", IMPORT_NAME],
         ),
+        PkgConfigNeededExtension(
+            "{}._fapi_callbacks".format(IMPORT_NAME),
+            [os.path.join(IMPORT_NAME, "swig", "fapi_callbacks.i")],
+            pkg_config_cflags=["tss2-fapi", "tss2-rc", "tss2-tctildr"],
+            pkg_config_libs=["tss2-fapi", "tss2-rc", "tss2-tctildr"],
+            swig_opts=["-c++", "-py3", "-outdir", IMPORT_NAME],
+        ),
     ],
     py_modules=[IMPORT_NAME],
     cmdclass={"build_ext": BuildExtThenCopySWIGPy, "build_py": BuildSWIGPyFiles},
