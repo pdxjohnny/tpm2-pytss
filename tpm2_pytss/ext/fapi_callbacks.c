@@ -65,21 +65,52 @@ TSS2_RC Fapi_CB_Auth_Proxy(
 static PyObject *
 my_set_callback(PyObject *dummy, PyObject *args)
 {
-    PyObject *result = NULL;
-    PyObject *temp;
+    // PyObject *result = NULL;
+    // PyObject *temp;
 
-    if (PyArg_ParseTuple(args, "O:set_callback", &temp)) {
-        if (!PyCallable_Check(temp)) {
-            PyErr_SetString(PyExc_TypeError, "parameter must be callable");
-            return NULL;
-        }
-        Py_XINCREF(temp);         /* Add a reference to new callback */
-        Py_XDECREF(my_callback);  /* Dispose of previous callback */
-        my_callback = temp;       /* Remember new callback */
-        /* Boilerplate to return "None" */
-        Py_INCREF(Py_None);
-        result = Py_None;
+    // if (PyArg_ParseTuple(args, "O:set_callback", &temp)) {
+    //     if (!PyCallable_Check(temp)) {
+    //         PyErr_SetString(PyExc_TypeError, "parameter must be callable");
+    //         return NULL;
+    //     }
+    //     Py_XINCREF(temp);         /* Add a reference to new callback */
+    //     Py_XDECREF(my_callback);  /* Dispose of previous callback */
+    //     my_callback = temp;       /* Remember new callback */
+    //     /* Boilerplate to return "None" */
+    //     Py_INCREF(Py_None);
+    //     result = Py_None;
+    // }
+
+  PyObject *resultobj = 0;
+  FAPI_CONTEXT *arg1 = (FAPI_CONTEXT *) 0 ;
+  Fapi_CB_Auth arg2 = (Fapi_CB_Auth) 0 ;
+  void *arg3 = (void *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  int res3 ;
+  PyObject *swig_obj[3] ;
+  TSS2_RC result;
+
+  if (!SWIG_Python_UnpackTuple(args, "Fapi_SetAuthCB", 3, 3, swig_obj)) SWIG_fail;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_FAPI_CONTEXT, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "Fapi_SetAuthCB" "', argument " "1"" of type '" "FAPI_CONTEXT *""'"); 
+  }
+  arg1 = (FAPI_CONTEXT *)(argp1);
+  {
+    int res = SWIG_ConvertFunctionPtr(swig_obj[1], (void**)(&arg2), SWIGTYPE_p_f_p_struct_FAPI_CONTEXT_p_q_const__char_p_p_char_p_void__unsigned_int);
+    if (!SWIG_IsOK(res)) {
+      SWIG_exception_fail(SWIG_ArgError(res), "in method '" "Fapi_SetAuthCB" "', argument " "2"" of type '" "Fapi_CB_Auth""'"); 
     }
+  }
+  res3 = SWIG_ConvertPtr(swig_obj[2],SWIG_as_voidptrptr(&arg3), 0, 0);
+  if (!SWIG_IsOK(res3)) {
+    SWIG_exception_fail(SWIG_ArgError(res3), "in method '" "Fapi_SetAuthCB" "', argument " "3"" of type '" "void *""'"); 
+  }
+  result = (TSS2_RC)Fapi_SetAuthCB(arg1,arg2,arg3);
+  resultobj = SWIG_From_unsigned_SS_int((unsigned int)(result));
+  return resultobj;
+
 
     printf("\n\n\nmy_set_callback\n\n\n\n");
     if (Fapi_SetAuthCB(Fapi_CB_Auth_Proxy, (void *)temp)) {
