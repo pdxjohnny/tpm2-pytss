@@ -1,5 +1,6 @@
 import random
 import hashlib
+import traceback
 import contextlib
 
 from tpm2_pytss.fapi import FAPI, FAPIDefaultConfig
@@ -10,19 +11,37 @@ from tpm2_pytss.fapi_callbacks import *
 MSG = "Text to Sign"
 
 
+PASSWORD = "abc"
+
+
 class PyCallback(Fapi_Callback_Proxy):
     def __init__(self):
         Fapi_Callback_Proxy.__init__(self)
 
-    def Fapi_CB_Auth(self, object_path, discription, auth):
-        breakpoint()
-        CHAR_PTR_PTR_assign(auth, "123")
-        print(TSS2_RC_SUCCESS)
-        print(TSS2_RC_SUCCESS.value)
+    def _Fapi_CB_Auth(self, object_path, discription, auth):
+        print(repr([self, object_path, discription, auth]))
+        if object_path != "P_RSA/HS/SRK/mySignKey":
+            print("TSS2_FAPI_RC_BAD_VALUE: Unexpected path")
+            # TODO Add TSS2_FAPI_RC_BAD_VALUE to tpm2_types
+            # return FAPI.MODULE.TSS2_FAPI_RC_BAD_VALUE
+
+        CHAR_PTR_PTR_assign(auth, PASSWORD)
+        # result = TSS2_RC_PTR(TSS2_RC_SUCCESS)
         return TSS2_RC_SUCCESS
 
+    def Fapi_CB_Auth(self, object_path, discription, auth):
+        result = TPM2_RC_PTR()
+        result.value = FAPI.MODULE.TPM2_RC_FAILURE
+        try:
+            result.value = self._Fapi_CB_Auth(object_path, discription, auth)
+        except:
+            traceback.print_exc()
+        print()
+        print(result)
+        print(result.value)
+        print()
+        return result.value
 
-PASSWORD = "abc"
 
 """
 static TSS2_RC
