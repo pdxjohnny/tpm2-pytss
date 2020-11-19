@@ -25,8 +25,7 @@ cdef class EsysContext(object):
         return rand.digest
 
     def __del__(self):
-        # todo free self.ptr
-        pass
+        print("TODO IMPLEMENT DEL")
 
 #
 # Declaring C Types as Python types. The type doesn't matter much, just use the right
@@ -57,10 +56,7 @@ cdef extern from "<tss2/tss2_esys.h>":
     struct TSS2_ABI_VERSION:
         # Opaque
         pass
-#    struct TPM2B_DIGEST:
-#        UINT16 size
-#        # how to struct with array?
-
+    
     # Native C Call
     TSS2_RC Esys_Initialize(
             ESYS_CONTEXT **ppEctxm,

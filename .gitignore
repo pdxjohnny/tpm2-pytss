@@ -1,0 +1,6 @@
+build/
+*.so
+*.swp
+# generated files
+pyesys.c
+bill.c
