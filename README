@@ -1,0 +1,12 @@
+This is some manually written cython that calls into ESAPI
+and gets a random value.
+
+BUILD:
+python setup.py build_ext --inplace
+
+RUN:
+./test.py
+
+While this is verbose, you have a ton of control over the API and it's easy to kick out Pythonic things.
+GetRandom somehow magically worked as a python array and I have no idea why, but i'll take it.
+
