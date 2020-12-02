@@ -1,6 +1,15 @@
-build/
-*.so
 *.swp
-# generated files
-pyesys.c
+*.so
+*.o
+*~
+*.pyc
+*.egg-info/
+__pycache__/
+build/
+dist/
+docs/build/
+pages/
+public/
+NVChip
 bill.c
+pyesys.c
