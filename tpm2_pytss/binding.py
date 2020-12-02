@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional, List
 from . import exceptions
 from .util.swig import WrapperMetaClass, pointer_class, PointerClass
 from .util.calculate import calculate
+from .fapi_callbacks import *
 from .esys_binding import *
 from .fapi_binding import *
 
@@ -16,6 +17,7 @@ from .fapi_binding import *
 MODULE_NAME = ".".join(__name__.split(".")[:-1])
 esys_binding = sys.modules[MODULE_NAME + ".esys_binding"]
 fapi_binding = sys.modules[MODULE_NAME + ".fapi_binding"]
+fapi_callbacks = sys.modules[MODULE_NAME + ".fapi_callbacks"]
 
 # TODO signature with return type of TPM_RC
 for prefix, module in [("Esys_", esys_binding), ("Fapi_", fapi_binding)]:
@@ -472,20 +474,20 @@ def typedef_map():
 
 TYPEDEFS = typedef_map()
 
-for module in [esys_binding, fapi_binding]:
-    for alias, typename in TYPEDEFS.items():
-        for alias, typename in zip(
-            [alias, "{}_PTR".format(alias), "{}_PTR_PTR".format(alias)],
-            [typename, "{}_PTR".format(typename), "{}_PTR_PTR".format(typename)],
-        ):
-            # Skip if it already exists
-            if sys.modules[__name__].__dict__.get(alias) is not None:
-                continue
-            reference = sys.modules[__name__].__dict__.get(typename)
-            if reference is None:
-                continue
+for alias, typename in TYPEDEFS.items():
+    for alias, typename in zip(
+        [alias, "{}_PTR".format(alias), "{}_PTR_PTR".format(alias)],
+        [typename, "{}_PTR".format(typename), "{}_PTR_PTR".format(typename)],
+    ):
+        # Skip if it already exists
+        if sys.modules[__name__].__dict__.get(alias) is not None:
+            continue
+        reference = sys.modules[__name__].__dict__.get(typename)
+        if reference is None:
+            continue
+        setattr(sys.modules[__name__], alias, type(alias, (reference,), {}))
+        for module in [esys_binding, fapi_binding, fapi_callbacks]:
             setattr(module, alias, type(alias, (reference,), {}))
-            setattr(sys.modules[__name__], alias, type(alias, (reference,), {}))
 
 
 class ESYSBinding(metaclass=WrapperMetaClass, module=esys_binding):

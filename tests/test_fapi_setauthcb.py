@@ -5,8 +5,8 @@ import contextlib
 
 from tpm2_pytss.fapi import FAPI, FAPIDefaultConfig
 from tpm2_pytss.binding import *
+import tpm2_pytss.fapi_callbacks as fapi_callbacks
 from tpm2_pytss.util.testing import BaseTestFAPI
-from tpm2_pytss.fapi_callbacks import *
 
 MSG = "Text to Sign"
 
@@ -14,9 +14,9 @@ MSG = "Text to Sign"
 PASSWORD = "abc"
 
 
-class PyCallback(Fapi_Callback_Proxy):
+class PyCallback(fapi_callbacks.Fapi_Callback_Proxy):
     def __init__(self):
-        Fapi_Callback_Proxy.__init__(self)
+        fapi_callbacks.Fapi_Callback_Proxy.__init__(self)
 
     def _Fapi_CB_Auth(self, object_path, discription, auth):
         print(repr([self, object_path, discription, auth]))
@@ -29,18 +29,17 @@ class PyCallback(Fapi_Callback_Proxy):
         # result = TSS2_RC_PTR(TSS2_RC_SUCCESS)
         return TSS2_RC_SUCCESS
 
-    def Fapi_CB_Auth(self, object_path, discription, auth):
-        result = TPM2_RC_PTR()
-        result.value = FAPI.MODULE.TPM2_RC_FAILURE
+    def Fapi_CB_Auth(self, object_path, discription, auth, rc):
         try:
-            result.value = self._Fapi_CB_Auth(object_path, discription, auth)
+            print()
+            print(rc)
+            print(rc.__dir__())
+            print(FAPI.MODULE.TSS2_RC_PTR.frompointer(rc))
+            print()
+            rc = fapi_callbacks.TSS2_RC_PTR.frompointer(rc)
+            rc.value = self._Fapi_CB_Auth(object_path, discription, auth)
         except:
             traceback.print_exc()
-        print()
-        print(result)
-        print(result.value)
-        print()
-        return result.value
 
 
 """
@@ -87,7 +86,7 @@ SIGN_TEMPLATE = "sign"
 class TestSetAuthCB(BaseTestFAPI):
     def test_setauthcb(self):
         # Create an Caller instance
-        caller = Caller()
+        caller = fapi_callbacks.Caller()
         # caller.delCallback()
 
         self.fapi_ctx.Provision(None, None, None)
@@ -102,7 +101,6 @@ class TestSetAuthCB(BaseTestFAPI):
         signatureSize = 0
 
         digest = TPM2B_DIGEST(
-            size=20,
             buffer=[
                 0x67,
                 0x68,
@@ -124,7 +122,7 @@ class TestSetAuthCB(BaseTestFAPI):
                 0x81,
                 0x8F,
                 0x8F,
-            ],
+            ]
         )
 
         callback = PyCallback().__disown__()

@@ -143,7 +143,7 @@ class BuildExtThenCopySWIGPy(build_ext):
     def run(self):
         super().run()
         # SWIG 4 Support
-        for fixfile in ["esys_binding.py", "fapi_binding.py"]:
+        for fixfile in ["esys_binding.py", "fapi_binding.py", "fapi_callbacks.py"]:
             binding_path = pathlib.Path(SELF_PATH, IMPORT_NAME, fixfile)
             binding = binding_path.read_text()
             if not "python_property = property" in binding:
