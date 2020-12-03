@@ -1,3 +1,34 @@
+# TPM2-TSS Python Bindings
+
+These bindings are based on cython, we have rewritten them because SWIG didn't
+work out well.
+
+## Development
+
+You need to install Cython first
+
+> This is due to pip not currently respecting PEP-518 for editable installs
+> https://github.com/pypa/pip/pull/6370
+> https://discuss.python.org/t/next-steps-for-editable-develop-proof-of-concept/4118/31
+
+```console
+$ pip install cython
+```
+
+Clone the repo
+
+```console
+$ git clone https://github.com/tpm2-software/tpm2-pytss
+```
+
+Then you can install this library in development mode
+
+```console
+$ pip install -e .
+```
+
+## Notes from Bill
+
 This is some manually written cython that calls into ESAPI
 and gets a random value.
 
