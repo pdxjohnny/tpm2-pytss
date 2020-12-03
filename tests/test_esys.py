@@ -1,7 +1,7 @@
 import unittest
 import binascii
 
-from pyesys import *
+from tpm2_pytss.pyesys import *
 
 
 class TestEsys(unittest.TestCase):

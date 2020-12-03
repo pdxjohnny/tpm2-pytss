@@ -7,7 +7,7 @@ from setuptools import Extension, find_packages, setup
 NAME = "tpm2-pytss"
 IMPORT_NAME = NAME.replace("-", "_")
 
-SELF_PATH = pathlib.Path(__file__).parent
+SELF_PATH = pathlib.Path(__file__).parent.resolve()
 
 README = (SELF_PATH / "README.md").read_text()
 
@@ -58,8 +58,18 @@ setup(
     include_package_data=True,
     ext_modules=cythonize(
         [
-            Extension("pyesys", sources=["pyesys.pyx"], libraries=["tss2-esys"]),
-            Extension("bill", sources=["bill.pyx", "libbill.c"]),
+            Extension(
+                IMPORT_NAME + ".pyesys",
+                sources=[str(SELF_PATH / IMPORT_NAME / "pyesys.pyx")],
+                libraries=["tss2-esys"],
+            ),
+            Extension(
+                IMPORT_NAME + ".bill",
+                sources=[
+                    str(SELF_PATH.joinpath(IMPORT_NAME, i))
+                    for i in ["bill.pyx", "libbill.c"]
+                ],
+            ),
         ],
         compiler_directives={"language_level": "3"},
     ),

@@ -1,6 +1,6 @@
 import unittest
 
-from bill import *
+from tpm2_pytss.bill import *
 
 
 class TestCallbacks(unittest.TestCase):
