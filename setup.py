@@ -59,6 +59,10 @@ setup(
     ext_modules=cythonize(
         [
             Extension(
+                IMPORT_NAME + ".tss2_common",
+                sources=[str(SELF_PATH / IMPORT_NAME / "tss2_common.pxd")],
+            ),
+            Extension(
                 IMPORT_NAME + ".pyesys",
                 sources=[str(SELF_PATH / IMPORT_NAME / "pyesys.pyx")],
                 libraries=["tss2-esys"],
