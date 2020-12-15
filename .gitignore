@@ -14,3 +14,4 @@ NVChip
 tpm2_pytss/bill.c
 tpm2_pytss/pyesys.c
 tpm2_pytss/tss2_common.c
+tpm2_pytss/tss2_tpm2_types.c

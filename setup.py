@@ -60,7 +60,11 @@ setup(
         [
             Extension(
                 IMPORT_NAME + ".tss2_common",
-                sources=[str(SELF_PATH / IMPORT_NAME / "tss2_common.pxd")],
+                sources=[str(SELF_PATH / IMPORT_NAME / "tss2_common.pyx")],
+            ),
+            Extension(
+                IMPORT_NAME + ".tss2_tpm2_types",
+                sources=[str(SELF_PATH / IMPORT_NAME / "tss2_tpm2_types.pyx")],
             ),
             Extension(
                 IMPORT_NAME + ".pyesys",
