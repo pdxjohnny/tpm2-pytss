@@ -177,9 +177,18 @@ class ConvertConfig(NamedTuple):
 
 
 def convert_file(config: ConvertConfig, filepath: pathlib.Path):
-    # Note that cpp is used. Provide a path to your own cpp or
-    # make sure one exists in PATH.
-    ast = parse_file(str(filepath.resolve()), use_cpp=True)
+    # Marshalling library requires use of fake_libc_include since it includes
+    # stdlib.h
+    ast = parse_file(
+        str(filepath.resolve()),
+        use_cpp=True,
+        cpp_args=[
+            "-nostdinc",
+            "-D__attribute__(x)=",
+            "-D__extension__(x)=",
+            "-I" + str(pathlib.Path("..", "pycparser", "utils", "fake_libc_include")),
+        ],
+    )
 
     file_defines = {}
     file_dependencies = set()
@@ -208,19 +217,34 @@ def convert_file(config: ConvertConfig, filepath: pathlib.Path):
     return file_defines, file_dependencies
 
 
+def convert_files(config: ConvertConfig, filepaths: List[pathlib.Path]):
+    file_defines = {}
+    file_dependencies = {}
+
+    for filepath, outfile in filepaths:
+        file_defines[filepath], file_dependencies[filepath] = convert_file(
+            config, filepath
+        )
+
+    print(file_defines)
+    print(file_dependencies)
+
+
 class TestConverter(unittest.TestCase):
     def test_struct(self):
         include_dir = SOURCE_ROOT_DIR / "include"
+
+        filepaths = [
+            (include_dir / "tss2" / filename, filename.replace(".h", "_h.pxd"))
+            for filename in ["tss2_common.h", "tss2_tpm2_types.h", "tss2_mu.h"]
+        ]
+
         config = ConvertConfig(
-            system_headers=[], relative_headers=[], include_dirs=[str(include_dir)]
+            system_headers=[
+                filepath.relative_to(include_dir) for filepath, _ in filepaths
+            ],
+            relative_headers=[],
+            include_dirs=[str(include_dir)],
         )
 
-        input_file = include_dir / "tss2" / "tss2_tpm2_types.h"
-        convert_file(
-            config._replace(system_headers=["tss2/tss2_tpm2_types.h"]), input_file
-        )
-
-        return
-
-        input_file = include_dir / "tss2" / "tss2_common.h"
-        convert_file(input_file)
+        convert_files(config, filepaths)
