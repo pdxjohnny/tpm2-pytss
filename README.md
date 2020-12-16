@@ -3,6 +3,22 @@
 These bindings are based on cython, we have rewritten them because SWIG didn't
 work out well.
 
+## Status
+
+- pxd files are generated via `tests/test_converter.py`
+
+  - We have all the function defs, typedefs, and struct definitions (with a
+    workaround to cython/cython#1305)
+
+## TODO
+
+- We need to get all the `#defines` it shouldn't be too hard to scrape them out
+  and put them in the pyx files. We will need to make sure to change the
+  typecases to Cython style typecasts
+
+- Need to either write or generate the wrapper functions for each Esys_ and
+  Fapi_ call. Most likley just write them.
+
 ## Development
 
 You need to install Cython first

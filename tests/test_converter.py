@@ -133,7 +133,6 @@ def Typedef_TypeDecl_Struct_Decl_Array_Size(config, decl) -> int:
         if isinstance(decl.dim, c_ast.Constant):
             return int(decl.dim.value)
         else:
-            # TODO Configurable headers locations
             return int(
                 calculate_sizeof(
                     C_GENERATOR.visit(decl.dim), system_headers=config.system_headers,
@@ -200,8 +199,6 @@ def Typedef_PtrDecl_FuncDecl(config, node):
     dependencies.add(type_name(config, node))
     for param in node.type.type.args.params:
         dependencies.add(type_name(config, param))
-    # TODO Haven't validated that this works yet but it looks hopeful
-    # https://github.com/williamcroberts/demo-cython/blob/207687332f1c02466e6250f02df11579ac108e4b/bill.pyx#L18
     return C_GENERATOR.visit(node), dependencies
 
 
@@ -210,8 +207,6 @@ def Typedef_FuncDecl(config, node):
     dependencies.add(type_name(config, node))
     for param in node.args.params:
         dependencies.add(type_name(config, param))
-    # TODO Haven't validated that this works yet but it looks hopeful
-    # https://github.com/williamcroberts/demo-cython/blob/207687332f1c02466e6250f02df11579ac108e4b/bill.pyx#L18
     return C_GENERATOR.visit(node), dependencies
 
 
@@ -237,7 +232,7 @@ class ConvertConfig(NamedTuple):
     overrides: Dict[str, str]
 
 
-def convert_file(config: ConvertConfig, filepath: pathlib.Path):
+def convert_pxd_file(config: ConvertConfig, filepath: pathlib.Path):
     # Marshalling library requires use of fake_libc_include since it includes
     # stdlib.h
     ast = parse_file(
@@ -311,15 +306,15 @@ def convert_file(config: ConvertConfig, filepath: pathlib.Path):
 
 
 def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str]]):
-    file_defines = {}
-    file_imports = {}
-    file_dependencies = {}
+    file_c_defines = {}
+    file_c_imports = {}
+    file_c_dependencies = {}
 
     for filepath, _outfile in filepaths:
-        file_defines[filepath] = convert_file(config, filepath)
+        file_c_defines[filepath] = convert_pxd_file(config, filepath)
 
     for type_name, definition_dependencies in config.overrides.items():
-        for filepath, definitions in file_defines.items():
+        for filepath, definitions in file_c_defines.items():
             if type_name in definitions:
                 if definition_dependencies is not None:
                     definitions[type_name] = definition_dependencies
@@ -327,45 +322,82 @@ def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str
                     del definitions[type_name]
                 break
 
-    for filepath, definitions in file_defines.items():
+    for filepath, definitions in file_c_defines.items():
         # Make the dependencies the union of all the dependencies
-        file_dependencies[filepath] = set(
+        file_c_dependencies[filepath] = set(
             itertools.chain(
                 *[dependencies for _definition, dependencies in definitions.values()]
             )
         )
         # Remove types which are defined in the file from the files dependencies
-        file_dependencies[filepath].difference_update(set(definitions.keys()))
+        file_c_dependencies[filepath].difference_update(set(definitions.keys()))
 
-    for filepath, dependencies in file_dependencies.items():
+    for filepath, dependencies in file_c_dependencies.items():
         for type_name in dependencies:
-            for defined_in_filepath, definitions in file_defines.items():
+            for defined_in_filepath, definitions in file_c_defines.items():
                 if type_name in definitions:
-                    file_imports.setdefault(filepath, {})
-                    file_imports[filepath].setdefault(defined_in_filepath, set())
-                    file_imports[filepath][defined_in_filepath].add(type_name)
+                    file_c_imports.setdefault(filepath, {})
+                    file_c_imports[filepath].setdefault(defined_in_filepath, set())
+                    file_c_imports[filepath][defined_in_filepath].add(type_name)
                     break
 
-    for filepath in file_imports.keys():
+    for filepath in file_c_imports.keys():
         print(
             filepath,
-            file_dependencies[filepath].difference(
-                set(itertools.chain(*file_imports[filepath].values()))
+            file_c_dependencies[filepath].difference(
+                set(itertools.chain(*file_c_imports[filepath].values()))
             ),
         )
 
-    for filepath, outfile in filepaths:
-        with open(outfile, "w") as fileobj:
-            for definition, _dependencies in file_defines[filepath].values():
-                fileobj.write(definition + "\n")
+    outfiles = dict(filepaths)
 
-    # pprint(file_imports)
-    # pprint(file_defines)
-    # pprint(file_dependencies)
+    for filepath, outfile in filepaths:
+        # Write out pxd file
+        with open(outfile.with_suffix(".pxd"), "w") as fileobj:
+            fileobj.write(
+                textwrap.dedent(
+                    """
+                from libc.stdint cimport (
+                    int8_t,
+                    uint8_t,
+                    int16_t,
+                    uint16_t,
+                    int32_t,
+                    uint32_t,
+                    int64_t,
+                    uint64_t,
+                )
+            \n"""
+                ).lstrip()
+            )
+            for upstream_filepath, type_names in dict(
+                sorted(file_c_imports.get(filepath, {}).items())
+            ).items():
+                upstream_outfile = outfiles[upstream_filepath]
+                fileobj.write(f"from {upstream_outfile.stem} cimport (\n")
+                for type_name in sorted(type_names):
+                    fileobj.write(f"    {type_name},\n")
+                fileobj.write(")\n")
+                fileobj.write("\n")
+            fileobj.write("\n")
+            fileobj.write(
+                'cdef extern from "<'
+                + str(filepath.relative_to(SOURCE_ROOT_DIR / "include"))
+                + '>":\n'
+            )
+            for definition, _dependencies in file_c_defines[filepath].values():
+                fileobj.write(textwrap.indent(definition, "    ") + "\n\n")
+        # Write out pyx file
+        pass
+
+    # pprint(file_c_imports)
+    # pprint(file_c_defines)
+    # pprint(file_c_dependencies)
 
 
 class TestConverter(unittest.TestCase):
     def test_struct(self):
+        # Uncomment to re-run conversion
         include_dir = SOURCE_ROOT_DIR / "include"
 
         filepaths = [
@@ -373,7 +405,7 @@ class TestConverter(unittest.TestCase):
                 include_dir / "tss2" / filename,
                 pathlib.Path(__file__).parent.parent
                 / "tpm2_pytss"
-                / filename.replace(".h", "_h.pxd"),
+                / filename.replace(".h", "_h"),
             )
             for filename in [
                 "tss2_common.h",
