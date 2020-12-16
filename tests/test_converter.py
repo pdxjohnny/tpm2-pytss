@@ -11,6 +11,13 @@ import subprocess
 from typing import List
 
 
+def compiler_flags_for_include_dirs(include_dirs):
+    cmd = []
+    for include_dir in include_dirs:
+        cmd += ["-I", include_dir]
+    return cmd
+
+
 PROGRAM = r"""
 int main() {
     printf("%zu\n", sizeof(SIZEOF_TYPE));
@@ -24,7 +31,7 @@ def calculate_sizeof(
     *,
     system_headers: List[str] = None,
     relative_headers: List[str] = None,
-    include_dirs: List[pathlib.Path] = None,
+    include_dirs: List[str] = None,
 ):
     pound_include_lines = ["#include <stdio.h>"]
     if system_headers:
@@ -47,9 +54,7 @@ def calculate_sizeof(
         ]
         # Add include dirs to search for headers
         if include_dirs:
-            cmd.append("-I")
-            for include_dir in include_dirs:
-                cmd.append(str(include_dir))
+            cmd += compiler_flags_for_include_dirs(include_dirs)
 
         # Source file to compile
         cmd.append(str(sizeof_path))
@@ -87,7 +92,7 @@ class CouldNotDetermineStructMemberArraySizeError(Exception):
         )
 
 
-def Typedef_TypeDecl_Struct_Decl_Type(decl):
+def Typedef_TypeDecl_Struct_Decl_Type(config, decl):
     """
     Get the type of a member of a struct
     """
@@ -100,7 +105,7 @@ def Typedef_TypeDecl_Struct_Decl_Type(decl):
     raise CouldNotDetermineStructMemberTypeError(decl)
 
 
-def Typedef_TypeDecl_Struct_Decl_Array_Size(decl) -> int:
+def Typedef_TypeDecl_Struct_Decl_Array_Size(config, decl) -> int:
     """
     Get the size of a member of a struct that is an array
     """
@@ -111,83 +116,110 @@ def Typedef_TypeDecl_Struct_Decl_Array_Size(decl) -> int:
             # TODO Configurable headers locations
             return int(
                 calculate_sizeof(
-                    C_GENERATOR.visit(decl.dim),
-                    system_headers=[
-                        pathlib.Path(decl.coord.file).relative_to(
-                            SOURCE_ROOT_DIR / "include"
-                        )
-                    ],
+                    C_GENERATOR.visit(decl.dim), system_headers=config.system_headers,
                 )
             )
     raise CouldNotDetermineStructMemberArraySizeError(decl)
 
 
-def Typedef_TypeDecl_Struct_Union(struct_or_union: str, node):
+def Typedef_TypeDecl_Struct_Union(config, struct_or_union: str, node):
     output = [f"{struct_or_union} {node.name}:"]
 
+    decl_types = set()
     for decl in node.type.type.decls:
         decl_array = ""
 
         if isinstance(decl.type, c_ast.TypeDecl):
-            decl_type = Typedef_TypeDecl_Struct_Decl_Type(decl)
+            decl_type = Typedef_TypeDecl_Struct_Decl_Type(config, decl)
         elif isinstance(decl.type, c_ast.ArrayDecl):
-            decl_type = Typedef_TypeDecl_Struct_Decl_Type(decl.type)
-            decl_array = f"[{Typedef_TypeDecl_Struct_Decl_Array_Size(decl.type)}]"
+            decl_type = Typedef_TypeDecl_Struct_Decl_Type(config, decl.type)
+            decl_array = (
+                f"[{Typedef_TypeDecl_Struct_Decl_Array_Size(config, decl.type)}]"
+            )
         else:
             raise CouldNotDetermineStructMemberTypeError(decl)
 
+        decl_types.add(decl_type)
         output.append(f"    {decl_type} {decl.name}" + decl_array)
-    return "\n".join(output)
+    return "\n".join(output), decl_types
 
 
-def Typedef_TypeDecl(node):
+def Typedef_TypeDecl(config, node):
     # typedef combined with declaration of struct
     if isinstance(node.type.type, (c_ast.Struct, c_ast.Union)):
         return Typedef_TypeDecl_Struct_Union(
-            node.type.type.__class__.__qualname__.lower(), node
+            config, node.type.type.__class__.__qualname__.lower(), node
         )
     elif isinstance(node.type.type, c_ast.IdentifierType):
-        return f"ctypedef {node.type.type.names[0]} {node.name}"
+        return (
+            f"ctypedef {node.type.type.names[0]} {node.name}",
+            {node.type.type.names[0]},
+        )
     else:
         raise UnknownTypeDeclError(node)
 
 
 class TypedefVisitor(c_ast.NodeVisitor):
-    def _visit_Typedef(self, node):
+    def _visit_Typedef(self, config, node):
         # typedef combined with declaration
         if isinstance(node.type, c_ast.TypeDecl):
-            return Typedef_TypeDecl(node)
-
-    def visit_Typedef(self, node):
-        # TODO Restrict this to the file we are parsing, not just the root dir
-        if not pathlib.Path(node.coord.file).is_relative_to(SOURCE_ROOT_DIR):
-            return
-
-        result = self._visit_Typedef(node)
-
-        if result is not None:
-            print(result)
-            print()
-
-        return
-        print("%s at %s" % (node.decl.name, node.decl.coord))
+            return Typedef_TypeDecl(config, node)
 
 
-def show_func_defs(filepath: pathlib.Path):
+from typing import NamedTuple
+
+
+class ConvertConfig(NamedTuple):
+    system_headers: List[str]
+    relative_headers: List[str]
+    include_dirs: List[str]
+
+
+def convert_file(config: ConvertConfig, filepath: pathlib.Path):
     # Note that cpp is used. Provide a path to your own cpp or
     # make sure one exists in PATH.
-    ast = parse_file(
-        str(filepath.resolve()),
-        use_cpp=True,
-        cpp_args="-I" + str(filepath.resolve().parent.parent),
-    )
+    ast = parse_file(str(filepath.resolve()), use_cpp=True)
 
-    v = TypedefVisitor()
+    file_defines = {}
+    file_dependencies = set()
+
+    class FileTypedefVisitor(TypedefVisitor):
+        def visit_Typedef(self, node):
+            nonlocal file_defines
+            nonlocal file_dependencies
+
+            if not pathlib.Path(node.coord.file).is_relative_to(filepath):
+                return
+
+            converted, dependencies = self._visit_Typedef(config, node)
+
+            if converted is None:
+                return
+
+            file_defines[node.name] = converted
+            file_dependencies.update(dependencies)
+
+    v = FileTypedefVisitor()
     v.visit(ast)
+
+    file_dependencies.difference_update(set(file_defines.keys()))
+
+    return file_defines, file_dependencies
 
 
 class TestConverter(unittest.TestCase):
     def test_struct(self):
-        input_file = pathlib.Path("include", "tss2", "tss2_tpm2_types.h")
-        input_file = SOURCE_ROOT_DIR / input_file
-        show_func_defs(input_file)
+        include_dir = SOURCE_ROOT_DIR / "include"
+        config = ConvertConfig(
+            system_headers=[], relative_headers=[], include_dirs=[str(include_dir)]
+        )
+
+        input_file = include_dir / "tss2" / "tss2_tpm2_types.h"
+        convert_file(
+            config._replace(system_headers=["tss2/tss2_tpm2_types.h"]), input_file
+        )
+
+        return
+
+        input_file = include_dir / "tss2" / "tss2_common.h"
+        convert_file(input_file)
