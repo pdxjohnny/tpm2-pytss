@@ -9,6 +9,7 @@ from pycparser import c_parser, c_ast, c_generator, parse_file
 import pathlib
 import textwrap
 import tempfile
+import itertools
 import subprocess
 from typing import List
 
@@ -310,6 +311,7 @@ def convert_file(config: ConvertConfig, filepath: pathlib.Path):
 
 def convert_files(config: ConvertConfig, filepaths: List[pathlib.Path]):
     file_defines = {}
+    file_imports = {}
     file_dependencies = {}
 
     for filepath, outfile in filepaths:
@@ -317,8 +319,26 @@ def convert_files(config: ConvertConfig, filepaths: List[pathlib.Path]):
             config, filepath
         )
 
-    pprint(file_defines)
-    pprint(file_dependencies)
+    for filepath, dependencies in file_dependencies.items():
+        for type_name in dependencies:
+            for defined_in_filepath, definitions in file_defines.items():
+                if type_name in definitions:
+                    file_imports.setdefault(filepath, {})
+                    file_imports[filepath].setdefault(defined_in_filepath, set())
+                    file_imports[filepath][defined_in_filepath].add(type_name)
+                    break
+
+    for filepath in file_imports.keys():
+        print(
+            filepath,
+            file_dependencies[filepath].difference(
+                set(itertools.chain(*file_imports[filepath].values()))
+            ),
+        )
+
+    # pprint(file_imports)
+    # pprint(file_defines)
+    # pprint(file_dependencies)
 
 
 class TestConverter(unittest.TestCase):
@@ -332,6 +352,7 @@ class TestConverter(unittest.TestCase):
                 "tss2_tpm2_types.h",
                 "tss2_mu.h",
                 "tss2_tcti.h",
+                "tss2_sys.h",
                 "tss2_esys.h",
                 "tss2_fapi.h",
             ]
