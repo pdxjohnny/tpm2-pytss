@@ -164,6 +164,7 @@ class TypedefVisitor(c_ast.NodeVisitor):
         # typedef combined with declaration
         if isinstance(node.type, c_ast.TypeDecl):
             return Typedef_TypeDecl(config, node)
+        raise NotImplementedError(f"Don't know what to do with {node.coord} {node}")
 
 
 from typing import NamedTuple
