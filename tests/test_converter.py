@@ -11,7 +11,7 @@ import textwrap
 import tempfile
 import itertools
 import subprocess
-from typing import List
+from typing import List, Tuple
 
 
 def compiler_flags_for_include_dirs(include_dirs):
@@ -227,13 +227,14 @@ class TypedefVisitor(c_ast.NodeVisitor):
         raise NotImplementedError(f"Don't know what to do with {node.coord} {node}")
 
 
-from typing import NamedTuple
+from typing import Dict, NamedTuple
 
 
 class ConvertConfig(NamedTuple):
     system_headers: List[str]
     relative_headers: List[str]
     include_dirs: List[str]
+    overrides: Dict[str, str]
 
 
 def convert_file(config: ConvertConfig, filepath: pathlib.Path):
@@ -306,18 +307,32 @@ def convert_file(config: ConvertConfig, filepath: pathlib.Path):
 
     file_dependencies.difference_update(set(file_defines.keys()))
 
-    return file_defines, file_dependencies
+    return file_defines
 
 
-def convert_files(config: ConvertConfig, filepaths: List[pathlib.Path]):
+def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str]]):
     file_defines = {}
     file_imports = {}
     file_dependencies = {}
 
     for filepath, outfile in filepaths:
-        file_defines[filepath], file_dependencies[filepath] = convert_file(
-            config, filepath
+        file_defines[filepath] = convert_file(config, filepath)
+
+    for type_name, (definition, dependencies) in config.overrides.items():
+        for filepath, definitions in file_defines.items():
+            if type_name in definitions:
+                definitions[type_name] = (definition, dependencies)
+                break
+
+    for filepath, definitions in file_defines.items():
+        # Make the dependencies the union of all the dependencies
+        file_dependencies[filepath] = set(
+            itertools.chain(
+                *[dependencies for _definition, dependencies in definitions.values()]
+            )
         )
+        # Remove types which are defined in the file from the files dependencies
+        file_dependencies[filepath].difference_update(set(definitions.keys()))
 
     for filepath, dependencies in file_dependencies.items():
         for type_name in dependencies:
@@ -364,6 +379,10 @@ class TestConverter(unittest.TestCase):
             ],
             relative_headers=[],
             include_dirs=[str(include_dir)],
+            overrides={
+                "TSS2_TCTI_CONTEXT": ("struct TSS2_TCTI_CONTEXT:\n    pass", set()),
+                "TSS2_SYS_CONTEXT": ("struct TSS2_SYS_CONTEXT:\n    pass", set()),
+            },
         )
 
         convert_files(config, filepaths)
