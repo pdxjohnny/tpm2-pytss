@@ -204,12 +204,22 @@ def Typedef_PtrDecl_FuncDecl(config, node):
     return C_GENERATOR.visit(node), dependencies
 
 
+def Typedef_FuncDecl(config, node):
+    dependencies = set()
+    dependencies.add(type_name(config, node))
+    for param in node.args.params:
+        dependencies.add(type_name(config, param))
+    # TODO Haven't validated that this works yet but it looks hopeful
+    # https://github.com/williamcroberts/demo-cython/blob/207687332f1c02466e6250f02df11579ac108e4b/bill.pyx#L18
+    return C_GENERATOR.visit(node), dependencies
+
+
 class TypedefVisitor(c_ast.NodeVisitor):
     def _visit_Typedef(self, config, node):
         # typedef combined with declaration
         if isinstance(node.type, c_ast.TypeDecl):
             return Typedef_TypeDecl(config, node)
-        if isinstance(node.type, c_ast.PtrDecl) and isinstance(
+        elif isinstance(node.type, c_ast.PtrDecl) and isinstance(
             node.type.type, c_ast.FuncDecl
         ):
             return Typedef_PtrDecl_FuncDecl(config, node)
@@ -266,6 +276,30 @@ def convert_file(config: ConvertConfig, filepath: pathlib.Path):
             )
             file_dependencies.update(dependencies)
 
+        def visit_FuncDecl(self, node):
+            nonlocal file_defines
+            nonlocal file_dependencies
+
+            if not pathlib.Path(node.coord.file).is_relative_to(filepath):
+                return
+
+            try:
+                converted, dependencies = Typedef_FuncDecl(config, node)
+            except:
+                print(node)
+                print(C_GENERATOR.visit(node))
+                raise
+
+            if converted is None:
+                return
+
+            name = node.type.declname
+            file_defines[name] = (
+                converted,
+                dependencies,
+            )
+            file_dependencies.update(dependencies)
+
     v = FileTypedefVisitor()
     v.visit(ast)
 
@@ -294,11 +328,12 @@ class TestConverter(unittest.TestCase):
         filepaths = [
             (include_dir / "tss2" / filename, filename.replace(".h", "_h.pxd"))
             for filename in [
-                # "tss2_common.h",
-                # "tss2_tpm2_types.h",
-                # "tss2_mu.h",
-                # "tss2_tcti.h",
+                "tss2_common.h",
+                "tss2_tpm2_types.h",
+                "tss2_mu.h",
+                "tss2_tcti.h",
                 "tss2_esys.h",
+                "tss2_fapi.h",
             ]
         ]
 
