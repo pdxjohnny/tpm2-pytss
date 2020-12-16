@@ -68,6 +68,11 @@ SOURCE_ROOT_DIR = pathlib.Path("/home/pdxjohnny/Documents/c/tpm2-tss").resolve()
 C_GENERATOR = c_generator.CGenerator()
 
 
+class UnknownTypeDeclError(Exception):
+    def __init__(self, node):
+        super().__init__(f"Don't know what to do with {node.coord}: {node}")
+
+
 class CouldNotDetermineStructMemberTypeError(Exception):
     def __init__(self, decl):
         super().__init__(
@@ -117,8 +122,8 @@ def Typedef_TypeDecl_Struct_Decl_Array_Size(decl) -> int:
     raise CouldNotDetermineStructMemberArraySizeError(decl)
 
 
-def Typedef_TypeDecl_Struct(node):
-    output = [f"struct {node.name}:"]
+def Typedef_TypeDecl_Struct_Union(struct_or_union: str, node):
+    output = [f"{struct_or_union} {node.name}:"]
 
     for decl in node.type.type.decls:
         decl_array = ""
@@ -137,8 +142,14 @@ def Typedef_TypeDecl_Struct(node):
 
 def Typedef_TypeDecl(node):
     # typedef combined with declaration of struct
-    if isinstance(node.type.type, c_ast.Struct):
-        return Typedef_TypeDecl_Struct(node)
+    if isinstance(node.type.type, (c_ast.Struct, c_ast.Union)):
+        return Typedef_TypeDecl_Struct_Union(
+            node.type.type.__class__.__qualname__.lower(), node
+        )
+    elif isinstance(node.type.type, c_ast.IdentifierType):
+        return f"ctypedef {node.type.type.names[0]} {node.name}"
+    else:
+        raise UnknownTypeDeclError(node)
 
 
 class TypedefVisitor(c_ast.NodeVisitor):
@@ -156,6 +167,7 @@ class TypedefVisitor(c_ast.NodeVisitor):
 
         if result is not None:
             print(result)
+            print()
 
         return
         print("%s at %s" % (node.decl.name, node.decl.coord))
