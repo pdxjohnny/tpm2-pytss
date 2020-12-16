@@ -2,6 +2,8 @@ import sys
 import pathlib
 import unittest
 
+from pprint import pprint
+
 from pycparser import c_parser, c_ast, c_generator, parse_file
 
 import pathlib
@@ -78,6 +80,11 @@ class UnknownTypeDeclError(Exception):
         super().__init__(f"Don't know what to do with {node.coord}: {node}")
 
 
+class UnknownTypeNameError(Exception):
+    def __init__(self, node):
+        super().__init__(f"Don't know how to find type name of {node.coord}: {node}")
+
+
 class CouldNotDetermineStructMemberTypeError(Exception):
     def __init__(self, decl):
         super().__init__(
@@ -92,17 +99,29 @@ class CouldNotDetermineStructMemberArraySizeError(Exception):
         )
 
 
-def Typedef_TypeDecl_Struct_Decl_Type(config, decl):
-    """
-    Get the type of a member of a struct
-    """
-    if hasattr(decl.type.type, "names"):
-        return decl.type.type.names[0]
-    elif hasattr(decl.type.type, "name"):
-        return decl.type.type.name
-    elif hasattr(decl.type.type, "declname"):
-        return decl.type.type.declname
-    raise CouldNotDetermineStructMemberTypeError(decl)
+def type_name(config, node):
+    if isinstance(
+        node,
+        (
+            c_ast.Typename,
+            c_ast.FuncDecl,
+            c_ast.Typedef,
+            c_ast.Decl,
+            c_ast.PtrDecl,
+            c_ast.TypeDecl,
+            c_ast.ArrayDecl,
+        ),
+    ):
+        return type_name(config, node.type)
+    elif isinstance(node, c_ast.IdentifierType):
+        if hasattr(node, "names"):
+            return node.names[0]
+        elif hasattr(node, "name"):
+            return node.name
+        elif hasattr(node, "declname"):
+            return node.declname
+    else:
+        raise UnknownTypeNameError(node)
 
 
 def Typedef_TypeDecl_Struct_Decl_Array_Size(config, decl) -> int:
@@ -122,17 +141,17 @@ def Typedef_TypeDecl_Struct_Decl_Array_Size(config, decl) -> int:
     raise CouldNotDetermineStructMemberArraySizeError(decl)
 
 
-def Typedef_TypeDecl_Struct_Union(config, struct_or_union: str, node):
+def Typedef_TypeDecl_Struct_Union_With_Members(config, struct_or_union: str, node):
     output = [f"{struct_or_union} {node.name}:"]
 
     decl_types = set()
     for decl in node.type.type.decls:
         decl_array = ""
 
-        if isinstance(decl.type, c_ast.TypeDecl):
-            decl_type = Typedef_TypeDecl_Struct_Decl_Type(config, decl)
+        if isinstance(decl.type, (c_ast.TypeDecl, c_ast.PtrDecl)):
+            decl_type = type_name(config, decl)
         elif isinstance(decl.type, c_ast.ArrayDecl):
-            decl_type = Typedef_TypeDecl_Struct_Decl_Type(config, decl.type)
+            decl_type = type_name(config, decl.type)
             decl_array = (
                 f"[{Typedef_TypeDecl_Struct_Decl_Array_Size(config, decl.type)}]"
             )
@@ -142,6 +161,18 @@ def Typedef_TypeDecl_Struct_Union(config, struct_or_union: str, node):
         decl_types.add(decl_type)
         output.append(f"    {decl_type} {decl.name}" + decl_array)
     return "\n".join(output), decl_types
+
+
+def Typedef_TypeDecl_Struct_Union(config, struct_or_union: str, node):
+    if node.type.type.decls is None:
+        # For: typedef struct name_a name_b
+        return (
+            f"ctypedef {node.type.type.name} {node.type.type.name}",
+            {node.type.type.name},
+        )
+    else:
+        # For all other cases, structs and unions with members
+        return Typedef_TypeDecl_Struct_Union_With_Members(config, struct_or_union, node)
 
 
 def Typedef_TypeDecl(config, node):
@@ -159,11 +190,25 @@ def Typedef_TypeDecl(config, node):
         raise UnknownTypeDeclError(node)
 
 
+def Typedef_PtrDecl_FuncDecl(config, node):
+    dependencies = set()
+    dependencies.add(type_name(config, node))
+    for param in node.type.type.args.params:
+        dependencies.add(type_name(config, param))
+    # TODO Haven't validated that this works yet but it looks hopeful
+    # https://github.com/williamcroberts/demo-cython/blob/207687332f1c02466e6250f02df11579ac108e4b/bill.pyx#L18
+    return C_GENERATOR.visit(node), dependencies
+
+
 class TypedefVisitor(c_ast.NodeVisitor):
     def _visit_Typedef(self, config, node):
         # typedef combined with declaration
         if isinstance(node.type, c_ast.TypeDecl):
             return Typedef_TypeDecl(config, node)
+        if isinstance(node.type, c_ast.PtrDecl) and isinstance(
+            node.type.type, c_ast.FuncDecl
+        ):
+            return Typedef_PtrDecl_FuncDecl(config, node)
         raise NotImplementedError(f"Don't know what to do with {node.coord} {node}")
 
 
@@ -201,12 +246,20 @@ def convert_file(config: ConvertConfig, filepath: pathlib.Path):
             if not pathlib.Path(node.coord.file).is_relative_to(filepath):
                 return
 
-            converted, dependencies = self._visit_Typedef(config, node)
+            try:
+                converted, dependencies = self._visit_Typedef(config, node)
+            except:
+                print(node)
+                print(C_GENERATOR.visit(node))
+                raise
 
             if converted is None:
                 return
 
-            file_defines[node.name] = converted
+            file_defines[node.name] = (
+                converted,
+                dependencies,
+            )
             file_dependencies.update(dependencies)
 
     v = FileTypedefVisitor()
@@ -226,8 +279,7 @@ def convert_files(config: ConvertConfig, filepaths: List[pathlib.Path]):
             config, filepath
         )
 
-    print(file_defines)
-    print(file_dependencies)
+    pprint(file_dependencies)
 
 
 class TestConverter(unittest.TestCase):
@@ -236,7 +288,12 @@ class TestConverter(unittest.TestCase):
 
         filepaths = [
             (include_dir / "tss2" / filename, filename.replace(".h", "_h.pxd"))
-            for filename in ["tss2_common.h", "tss2_tpm2_types.h", "tss2_mu.h"]
+            for filename in [
+                "tss2_common.h",
+                "tss2_tpm2_types.h",
+                "tss2_mu.h",
+                "tss2_tcti.h",
+            ]
         ]
 
         config = ConvertConfig(
