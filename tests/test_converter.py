@@ -168,7 +168,7 @@ def Typedef_TypeDecl_Struct_Union(config, struct_or_union: str, node):
     if node.type.type.decls is None:
         if node.type.type.name == node.name:
             # Opaque struct
-            return f"struct {node.name}\n    pass", set()
+            return f"struct {node.name}:\n    pass", set()
         else:
             # For: typedef struct name_a name_b
             return (
@@ -315,13 +315,16 @@ def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str
     file_imports = {}
     file_dependencies = {}
 
-    for filepath, outfile in filepaths:
+    for filepath, _outfile in filepaths:
         file_defines[filepath] = convert_file(config, filepath)
 
-    for type_name, (definition, dependencies) in config.overrides.items():
+    for type_name, definition_dependencies in config.overrides.items():
         for filepath, definitions in file_defines.items():
             if type_name in definitions:
-                definitions[type_name] = (definition, dependencies)
+                if definition_dependencies is not None:
+                    definitions[type_name] = definition_dependencies
+                else:
+                    del definitions[type_name]
                 break
 
     for filepath, definitions in file_defines.items():
@@ -351,6 +354,11 @@ def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str
             ),
         )
 
+    for filepath, outfile in filepaths:
+        with open(outfile, "w") as fileobj:
+            for definition, _dependencies in file_defines[filepath].values():
+                fileobj.write(definition + "\n")
+
     # pprint(file_imports)
     # pprint(file_defines)
     # pprint(file_dependencies)
@@ -361,7 +369,12 @@ class TestConverter(unittest.TestCase):
         include_dir = SOURCE_ROOT_DIR / "include"
 
         filepaths = [
-            (include_dir / "tss2" / filename, filename.replace(".h", "_h.pxd"))
+            (
+                include_dir / "tss2" / filename,
+                pathlib.Path(__file__).parent.parent
+                / "tpm2_pytss"
+                / filename.replace(".h", "_h.pxd"),
+            )
             for filename in [
                 "tss2_common.h",
                 "tss2_tpm2_types.h",
@@ -382,6 +395,7 @@ class TestConverter(unittest.TestCase):
             overrides={
                 "TSS2_TCTI_CONTEXT": ("struct TSS2_TCTI_CONTEXT:\n    pass", set()),
                 "TSS2_SYS_CONTEXT": ("struct TSS2_SYS_CONTEXT:\n    pass", set()),
+                "pollfd": None,
             },
         )
 
