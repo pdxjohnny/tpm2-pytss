@@ -165,11 +165,15 @@ def Typedef_TypeDecl_Struct_Union_With_Members(config, struct_or_union: str, nod
 
 def Typedef_TypeDecl_Struct_Union(config, struct_or_union: str, node):
     if node.type.type.decls is None:
-        # For: typedef struct name_a name_b
-        return (
-            f"ctypedef {node.type.type.name} {node.type.type.name}",
-            {node.type.type.name},
-        )
+        if node.type.type.name == node.name:
+            # Opaque struct
+            return f"struct {node.name}\n    pass", set()
+        else:
+            # For: typedef struct name_a name_b
+            return (
+                f"ctypedef {node.type.type.name} {node.type.type.name}",
+                {node.type.type.name},
+            )
     else:
         # For all other cases, structs and unions with members
         return Typedef_TypeDecl_Struct_Union_With_Members(config, struct_or_union, node)
@@ -279,6 +283,7 @@ def convert_files(config: ConvertConfig, filepaths: List[pathlib.Path]):
             config, filepath
         )
 
+    pprint(file_defines)
     pprint(file_dependencies)
 
 
@@ -289,10 +294,11 @@ class TestConverter(unittest.TestCase):
         filepaths = [
             (include_dir / "tss2" / filename, filename.replace(".h", "_h.pxd"))
             for filename in [
-                "tss2_common.h",
-                "tss2_tpm2_types.h",
-                "tss2_mu.h",
-                "tss2_tcti.h",
+                # "tss2_common.h",
+                # "tss2_tpm2_types.h",
+                # "tss2_mu.h",
+                # "tss2_tcti.h",
+                "tss2_esys.h",
             ]
         ]
 
