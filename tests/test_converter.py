@@ -484,55 +484,71 @@ def convert_pyx_file(config: ConvertConfig, filepath: pathlib.Path):
             exception = future.exception()
             if exception is not None:
                 raise exception
-            defines[future_to_name[future]] = future.result()
+            cython_define = future.result()
+            # We need to put the definition in definition, dependencies format
+            # for the caller to do dependency resolution
+            typedef = set()
+            if cython_define.typedef is not CYTHON_DEFINE_NO_TYPEDEF:
+                typedef.add(cython_define.typedef)
+            defines[future_to_name[future]] = (cython_define, typedef)
     return defines
 
 
 def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str]]):
-    file_py_defines = {}
-    file_c_defines = {}
-    file_c_imports = {}
-    file_c_dependencies = {}
+    generate_extentions = ["pxd", "pyx"]
+    file_defines = {key: {} for key in generate_extentions}
+    file_imports = {key: {} for key in generate_extentions}
+    file_dependencies = {key: {} for key in generate_extentions}
 
     for filepath, _outfile in filepaths:
-        file_c_defines[filepath] = convert_pxd_file(config, filepath)
-        file_py_defines[filepath] = convert_pyx_file(config, filepath)
+        file_defines["pxd"][filepath] = convert_pxd_file(config, filepath)
+        file_defines["pyx"][filepath] = convert_pyx_file(config, filepath)
 
-    for type_name, definition_dependencies in config.overrides.items():
-        for filepath, definitions in file_c_defines.items():
-            if type_name in definitions:
-                if definition_dependencies is not None:
-                    definitions[type_name] = definition_dependencies
-                else:
-                    del definitions[type_name]
-                break
-
-    for filepath, definitions in file_c_defines.items():
-        # Make the dependencies the union of all the dependencies
-        file_c_dependencies[filepath] = set(
-            itertools.chain(
-                *[dependencies for _definition, dependencies in definitions.values()]
-            )
-        )
-        # Remove types which are defined in the file from the files dependencies
-        file_c_dependencies[filepath].difference_update(set(definitions.keys()))
-
-    for filepath, dependencies in file_c_dependencies.items():
-        for type_name in dependencies:
-            for defined_in_filepath, definitions in file_c_defines.items():
+    for extension in generate_extentions:
+        for type_name, definition_dependencies in config.overrides.items():
+            for filepath, definitions in file_defines[extension].items():
                 if type_name in definitions:
-                    file_c_imports.setdefault(filepath, {})
-                    file_c_imports[filepath].setdefault(defined_in_filepath, set())
-                    file_c_imports[filepath][defined_in_filepath].add(type_name)
+                    if definition_dependencies is not None:
+                        definitions[type_name] = definition_dependencies
+                    else:
+                        del definitions[type_name]
                     break
 
-    for filepath in file_c_imports.keys():
-        print(
-            filepath,
-            file_c_dependencies[filepath].difference(
-                set(itertools.chain(*file_c_imports[filepath].values()))
-            ),
-        )
+        for filepath, definitions in file_defines[extension].items():
+            # Make the dependencies the union of all the dependencies
+            file_dependencies[extension][filepath] = set(
+                itertools.chain(
+                    *[
+                        dependencies
+                        for _definition, dependencies in definitions.values()
+                    ]
+                )
+            )
+            # Remove types which are defined in the file from the files dependencies
+            file_dependencies[extension][filepath].difference_update(
+                set(definitions.keys())
+            )
+
+        for filepath, dependencies in file_dependencies[extension].items():
+            for type_name in dependencies:
+                for defined_in_filepath, definitions in file_defines[extension].items():
+                    if type_name in definitions:
+                        file_imports[extension].setdefault(filepath, {})
+                        file_imports[extension][filepath].setdefault(
+                            defined_in_filepath, set()
+                        )
+                        file_imports[extension][filepath][defined_in_filepath].add(
+                            type_name
+                        )
+                        break
+
+        for filepath in file_imports[extension].keys():
+            print(
+                filepath,
+                file_dependencies[extension][filepath].difference(
+                    set(itertools.chain(*file_imports[extension][filepath].values()))
+                ),
+            )
 
     outfiles = dict(filepaths)
 
@@ -557,7 +573,7 @@ def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str
                 ).lstrip()
             )
             for upstream_filepath, type_names in dict(
-                sorted(file_c_imports.get(filepath, {}).items())
+                sorted(file_imports["pxd"].get(filepath, {}).items())
             ).items():
                 upstream_outfile = outfiles[upstream_filepath]
                 fileobj.write(f"from {upstream_outfile.stem} cimport (\n")
@@ -571,7 +587,7 @@ def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str
                 + str(filepath.relative_to(SOURCE_ROOT_DIR / "include"))
                 + '>":\n'
             )
-            for definition, _dependencies in file_c_defines[filepath].values():
+            for definition, _dependencies in file_defines["pxd"][filepath].values():
                 fileobj.write(textwrap.indent(definition, "    ") + "\n\n")
         # Remove pxd file if empty
         if not pxd_path.with_suffix(".pxd").read_text().strip():
@@ -579,7 +595,7 @@ def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str
         # Write out pyx file
         pyx_path = outfile.with_suffix(".pyx")
         with open(pyx_path, "w") as fileobj:
-            for define in file_py_defines.get(filepath, {}).values():
+            for define, _dependencies in file_defines["pyx"].get(filepath, {}).values():
                 # Skip if the define has no value
                 if define.value is CYTHON_DEFINE_NO_VALUE:
                     print("No value for", define, file=sys.stderr)
@@ -590,9 +606,9 @@ def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str
         if not pyx_path.read_text().strip():
             pyx_path.unlink()
 
-    # pprint(file_c_imports)
-    # pprint(file_c_defines)
-    # pprint(file_c_dependencies)
+    # pprint(file_imports)
+    # pprint(file_defines)
+    # pprint(file_dependencies)
 
 
 class TestConverter(unittest.TestCase):
