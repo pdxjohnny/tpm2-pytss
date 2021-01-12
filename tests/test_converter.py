@@ -6,12 +6,16 @@ from pprint import pprint
 
 from pycparser import c_parser, c_ast, c_generator, parse_file
 
+import re
 import pathlib
 import textwrap
 import tempfile
 import itertools
+import contextlib
 import subprocess
-from typing import List, Tuple
+import dataclasses
+import concurrent.futures
+from typing import List, Tuple, Union, Type
 
 
 def compiler_flags_for_include_dirs(include_dirs):
@@ -325,13 +329,174 @@ def convert_pxd_file(config: ConvertConfig, filepath: pathlib.Path):
     return file_defines
 
 
+class Const:
+    def __repr__(self):
+        return self.__class__.__name__[1:]
+
+
+class _CYTHON_DEFINE_NO_VALUE(Const):
+    pass
+
+
+class _CYTHON_DEFINE_NO_TYPEDEF(Const):
+    pass
+
+
+CYTHON_DEFINE_NO_VALUE = _CYTHON_DEFINE_NO_VALUE()
+CYTHON_DEFINE_NO_TYPEDEF = _CYTHON_DEFINE_NO_TYPEDEF()
+
+# This matches (TYPE_NAME) C style type casts that are found within #defines
+# \( and \) mean that we are searching for the following when it is prefixed by
+# a '(' and followed by a ')'
+# []+ says include all the characters within [] until a character not within []
+#   a-z says lowercase 'a' through 'z' should be included in search
+#   A-Z says uppercase 'a' through 'z' should be included in search
+#   0-9 says '0' through '9' should be included in search
+#   _ says underscore should be included in search
+CYTHON_DEFINE_FIND_TYPEDEF_REGEX = re.compile(r"\([a-zA-Z0-9_]+\)")
+
+
+@dataclasses.dataclass
+class CPoundDefine:
+    """
+    Used for parsing #define. Holds the definition name and it's contents (body)
+    """
+
+    name: str
+    body: str
+
+
+@dataclasses.dataclass
+class CythonDefine:
+    """
+    Cython translation of a :py:class:`CPoundDefine` object. The Python variable
+    assignment equivalent with Cython typecast if applicable.
+    """
+
+    name: str
+    typedef: Union[str, Type[_CYTHON_DEFINE_NO_TYPEDEF]]
+    value: Union[str, Type[_CYTHON_DEFINE_NO_VALUE]]
+    c_pound_define: CPoundDefine
+
+    def __str__(self):
+        if self.value is CYTHON_DEFINE_NO_VALUE:
+            return repr(self)
+        # If the define has a typedef then format it in Cython's syntax
+        typedef = self.typedef
+        if typedef is CYTHON_DEFINE_NO_TYPEDEF:
+            typedef = ""
+        else:
+            typedef = "<" + typedef + ">"
+        # Write out the Python variable assignment version of the define
+        return self.name + " = " + typedef + self.value
+
+    @staticmethod
+    def find_value(
+        config: ConvertConfig, define: CPoundDefine
+    ) -> Union[int, Type[_CYTHON_DEFINE_NO_VALUE]]:
+        """
+        Try to find the size
+        """
+        # Do not try to calculate value for function macros
+        if "(" in define.name:
+            return CYTHON_DEFINE_NO_VALUE
+        # If we have a negative constant don't try to convert to hex
+        if define.body.startswith("-"):
+            return define.body
+        # Shorthand struct defines (not .member = syntax, just comma separated)
+        if define.body.startswith("{") and define.body.endswith("}"):
+            return "(" + define.body[1:-1] + ")"
+        # Convert the value to hex
+        return hex(
+            int(
+                calculate_sizeof(
+                    define.body,
+                    "%llx",
+                    "POUND_DEFINE",
+                    "POUND_DEFINE",
+                    system_headers=config.system_headers,
+                    quiet=True,
+                ),
+                16,
+            )
+        )
+
+    @staticmethod
+    def find_typedef(
+        _config: ConvertConfig, define: CPoundDefine
+    ) -> Union[str, Type[_CYTHON_DEFINE_NO_TYPEDEF]]:
+        # Regex to look for typedef
+        for match in CYTHON_DEFINE_FIND_TYPEDEF_REGEX.findall(define.body):
+            # Remove parenthesizes
+            match = match[1:-1]
+            # Check if this is a valid type name. Does it start with a letter
+            if match[:1].isalpha():
+                return match
+        return CYTHON_DEFINE_NO_TYPEDEF
+
+    @classmethod
+    def from_c_pound_define(cls, config: ConvertConfig, define: CPoundDefine):
+        return cls(
+            name=define.name,
+            typedef=cls.find_typedef(config, define),
+            value=cls.find_value(config, define),
+            c_pound_define=define,
+        )
+
+
+def convert_pyx_file(config: ConvertConfig, filepath: pathlib.Path):
+    POUND_DEFINE = "#define"
+    defines = {}
+    current_define = CPoundDefine(name="", body="")
+    for line in filepath.read_text().split("\n"):
+        line = line.strip()
+        # Check if we have a new definition
+        if line.startswith(POUND_DEFINE):
+            # If we found a new define set the name
+            current_define.name = line.split()[1]
+            # Set the line to be the part not including #define or the name
+            line = line.split(maxsplit=2)[-1]
+            # Do not include header guards or definitions without values
+            if line == current_define.name:
+                current_define.name = ""
+        # If we are currently parsing as define
+        if current_define.name:
+            # Keep adding until end of definition
+            if line.endswith("\\"):
+                # Add line but remove backslash
+                current_define.body += line[:-1]
+                continue
+            # Add line
+            current_define.body += line
+            # Add to dictionary of defines
+            defines[current_define.name] = current_define
+            # Create a new blank current definition
+            current_define = CPoundDefine(name="", body="")
+    # Remove header guards
+    # We can use a with statement to ensure threads are cleaned up promptly
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        # Start the load operations and mark each future with its URL
+        future_to_name = {
+            executor.submit(CythonDefine.from_c_pound_define, config, define): name
+            for name, define in defines.items()
+        }
+        for future in concurrent.futures.as_completed(future_to_name):
+            exception = future.exception()
+            if exception is not None:
+                raise exception
+            defines[future_to_name[future]] = future.result()
+    return defines
+
+
 def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str]]):
+    file_py_defines = {}
     file_c_defines = {}
     file_c_imports = {}
     file_c_dependencies = {}
 
     for filepath, _outfile in filepaths:
         file_c_defines[filepath] = convert_pxd_file(config, filepath)
+        file_py_defines[filepath] = convert_pyx_file(config, filepath)
 
     for type_name, definition_dependencies in config.overrides.items():
         for filepath, definitions in file_c_defines.items():
@@ -408,7 +573,14 @@ def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str
             for definition, _dependencies in file_c_defines[filepath].values():
                 fileobj.write(textwrap.indent(definition, "    ") + "\n\n")
         # Write out pyx file
-        pass
+        with open(outfile.with_suffix(".pyx"), "w") as fileobj:
+            for define in file_py_defines.get(filepath, {}).values():
+                # Skip if the define has no value
+                if define.value is CYTHON_DEFINE_NO_VALUE:
+                    print("No value for", define, file=sys.stderr)
+                    continue
+                # Write out the Cython variable assignment version of the define
+                fileobj.write(str(define) + "\n")
 
     # pprint(file_c_imports)
     # pprint(file_c_defines)
