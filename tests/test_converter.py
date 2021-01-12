@@ -538,7 +538,8 @@ def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str
 
     for filepath, outfile in filepaths:
         # Write out pxd file
-        with open(outfile.with_suffix(".pxd"), "w") as fileobj:
+        pxd_path = outfile.with_suffix(".pxd")
+        with open(pxd_path, "w") as fileobj:
             fileobj.write(
                 textwrap.dedent(
                     """
@@ -572,8 +573,12 @@ def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str
             )
             for definition, _dependencies in file_c_defines[filepath].values():
                 fileobj.write(textwrap.indent(definition, "    ") + "\n\n")
+        # Remove pxd file if empty
+        if not pxd_path.with_suffix(".pxd").read_text().strip():
+            pxd_path.unlink()
         # Write out pyx file
-        with open(outfile.with_suffix(".pyx"), "w") as fileobj:
+        pyx_path = outfile.with_suffix(".pyx")
+        with open(pyx_path, "w") as fileobj:
             for define in file_py_defines.get(filepath, {}).values():
                 # Skip if the define has no value
                 if define.value is CYTHON_DEFINE_NO_VALUE:
@@ -581,6 +586,9 @@ def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str
                     continue
                 # Write out the Cython variable assignment version of the define
                 fileobj.write(str(define) + "\n")
+        # Remove pyx file if empty
+        if not pyx_path.read_text().strip():
+            pyx_path.unlink()
 
     # pprint(file_c_imports)
     # pprint(file_c_defines)
