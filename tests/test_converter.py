@@ -23,7 +23,7 @@ def compiler_flags_for_include_dirs(include_dirs):
 
 PROGRAM = r"""
 int main() {
-    printf("%zu\n", sizeof(SIZEOF_TYPE));
+    printf("REPLACE_FSTRING\n", REPLACE_ARGUMENT);
     return 0;
 }
 """
@@ -31,10 +31,14 @@ int main() {
 
 def calculate_sizeof(
     sizeof_argument,
+    fstring: str,
+    argument: str,
+    macro: str,
     *,
     system_headers: List[str] = None,
     relative_headers: List[str] = None,
     include_dirs: List[str] = None,
+    quiet: bool = False,
 ):
     pound_include_lines = ["#include <stdio.h>"]
     if system_headers:
@@ -45,7 +49,16 @@ def calculate_sizeof(
     with tempfile.TemporaryDirectory(prefix="sizeof_source_") as tempdir:
         sizeof_path = pathlib.Path(tempdir, "sizeof.c")
         sizeof_path.write_text(
-            textwrap.dedent("\n".join(pound_include_lines + [PROGRAM]))
+            textwrap.dedent(
+                "\n".join(
+                    pound_include_lines
+                    + [
+                        PROGRAM.replace("REPLACE_FSTRING", fstring).replace(
+                            "REPLACE_ARGUMENT", argument
+                        )
+                    ]
+                )
+            )
         )
 
         cmd = [
@@ -53,7 +66,7 @@ def calculate_sizeof(
             "-o",
             str(pathlib.Path(tempdir, "a.out")),
             "-D",
-            "SIZEOF_TYPE={}".format(sizeof_argument),
+            "{}={}".format(macro, sizeof_argument),
         ]
         # Add include dirs to search for headers
         if include_dirs:
@@ -61,9 +74,12 @@ def calculate_sizeof(
 
         # Source file to compile
         cmd.append(str(sizeof_path))
-        subprocess.check_call(cmd)
+        if quiet:
+            subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        else:
+            subprocess.check_call(cmd)
 
-        return int(subprocess.check_output(str(pathlib.Path(tempdir, "a.out"))))
+        return subprocess.check_output(str(pathlib.Path(tempdir, "a.out")))
 
 
 if sys.version_info.major >= 3 and sys.version_info.minor < 9:
@@ -135,7 +151,11 @@ def Typedef_TypeDecl_Struct_Decl_Array_Size(config, decl) -> int:
         else:
             return int(
                 calculate_sizeof(
-                    C_GENERATOR.visit(decl.dim), system_headers=config.system_headers,
+                    C_GENERATOR.visit(decl.dim),
+                    "%zu",
+                    "sizeof(SIZEOF_TYPE)",
+                    "SIZEOF_TYPE",
+                    system_headers=config.system_headers,
                 )
             )
     raise CouldNotDetermineStructMemberArraySizeError(decl)
