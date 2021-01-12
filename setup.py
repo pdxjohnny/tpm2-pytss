@@ -67,6 +67,18 @@ setup(
                 sources=[str(SELF_PATH / IMPORT_NAME / "tss2_tpm2_types.pyx")],
             ),
             Extension(
+                IMPORT_NAME + ".tss2_common_h",
+                sources=[str(SELF_PATH / IMPORT_NAME / "tss2_common_h.pyx")],
+            ),
+            Extension(
+                IMPORT_NAME + ".tss2_tpm2_types_h",
+                sources=[str(SELF_PATH / IMPORT_NAME / "tss2_tpm2_types_h.pyx")],
+            ),
+            Extension(
+                IMPORT_NAME + ".tss2_esys_h",
+                sources=[str(SELF_PATH / IMPORT_NAME / "tss2_esys_h.pyx")],
+            ),
+            Extension(
                 IMPORT_NAME + ".pyesys",
                 sources=[str(SELF_PATH / IMPORT_NAME / "pyesys.pyx")],
                 libraries=["tss2-esys"],
