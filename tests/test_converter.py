@@ -254,6 +254,7 @@ class ConvertConfig(NamedTuple):
     relative_headers: List[str]
     include_dirs: List[str]
     overrides: Dict[str, str]
+    no_write: List[str]
 
 
 def convert_pxd_file(config: ConvertConfig, filepath: pathlib.Path):
@@ -576,6 +577,9 @@ def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str
     for filepath, outfile in filepaths:
         # Write out pxd file
         pxd_path = outfile.with_suffix(".pxd")
+        # Skip if we shouldn't write this file out
+        if pxd_path.name in config.no_write:
+            continue
         with open(pxd_path, "w") as fileobj:
             fileobj.write(
                 textwrap.dedent(
@@ -613,8 +617,13 @@ def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str
         # Remove pxd file if empty
         if not pxd_path.with_suffix(".pxd").read_text().strip():
             pxd_path.unlink()
+
+    for filepath, outfile in filepaths:
         # Write out pyx file
         pyx_path = outfile.with_suffix(".pyx")
+        # Skip if we shouldn't write this file out
+        if pyx_path.name in config.no_write:
+            continue
         with open(pyx_path, "w") as fileobj:
             # Import dependencies and everything defined in corresponding pxd
             for upstream_filepath, type_names in dict(
@@ -677,6 +686,7 @@ class TestConverter(unittest.TestCase):
                 "TSS2_SYS_CONTEXT": ("struct TSS2_SYS_CONTEXT:\n    pass", set()),
                 "pollfd": None,
             },
+            no_write=["tss2_tcti_h.pxd", "tss2_tcti_h.pyx", "tss2_mu_h.pyx"],
         )
 
         convert_files(config, filepaths)
