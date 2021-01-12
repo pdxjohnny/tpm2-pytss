@@ -429,6 +429,10 @@ class CythonDefine:
         for match in CYTHON_DEFINE_FIND_TYPEDEF_REGEX.findall(define.body):
             # Remove parenthesizes
             match = match[1:-1]
+            # Make sure that the match is the first part of the define. We don't
+            # want to accedentally match a call to sizeof or something
+            if define.body.index(match) > 2:
+                return CYTHON_DEFINE_NO_TYPEDEF
             # Check if this is a valid type name. Does it start with a letter
             if match[:1].isalpha():
                 return match
