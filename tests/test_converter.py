@@ -535,7 +535,18 @@ def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str
 
         for filepath, dependencies in file_dependencies[extension].items():
             for type_name in dependencies:
-                for defined_in_filepath, definitions in file_defines[extension].items():
+                # If we are looking for pyx dependencies we need to search the
+                # pxd files for their definitions
+                search_extension = extension
+                if extension == "pyx":
+                    search_extension = "pxd"
+                # Create dictionaries where the files containing definitions are
+                # mapped to the set of definition within that file required by
+                # filepath, which is the file we are currently doing dependency
+                # resolution for.
+                for defined_in_filepath, definitions in file_defines[
+                    search_extension
+                ].items():
                     if type_name in definitions:
                         file_imports[extension].setdefault(filepath, {})
                         file_imports[extension][filepath].setdefault(
@@ -548,11 +559,17 @@ def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str
 
         for filepath in file_imports[extension].keys():
             print(
+                extension,
                 filepath,
                 file_dependencies[extension][filepath].difference(
                     set(itertools.chain(*file_imports[extension][filepath].values()))
                 ),
             )
+
+    # Make sure the pyx files import everything from their corresponding pxd
+    for filepath in file_imports["pyx"].keys():
+        for type_name in file_defines["pxd"][filepath].keys():
+            file_imports["pyx"][filepath][filepath].add(type_name)
 
     outfiles = dict(filepaths)
 
@@ -599,6 +616,17 @@ def convert_files(config: ConvertConfig, filepaths: List[Tuple[pathlib.Path, str
         # Write out pyx file
         pyx_path = outfile.with_suffix(".pyx")
         with open(pyx_path, "w") as fileobj:
+            # Import dependencies and everything defined in corresponding pxd
+            for upstream_filepath, type_names in dict(
+                sorted(file_imports["pyx"].get(filepath, {}).items())
+            ).items():
+                upstream_outfile = outfiles[upstream_filepath]
+                fileobj.write(f"from {upstream_outfile.stem} cimport (\n")
+                for type_name in sorted(type_names):
+                    fileobj.write(f"    {type_name},\n")
+                fileobj.write(")\n")
+                fileobj.write("\n")
+            fileobj.write("\n")
             for define, _dependencies in file_defines["pyx"].get(filepath, {}).values():
                 # Skip if the define has no value
                 if define.value is CYTHON_DEFINE_NO_VALUE:
