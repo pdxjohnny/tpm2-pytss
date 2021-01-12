@@ -1,3 +1,8 @@
+from tss2_tcti_h cimport (
+    TSS2_TCTI_POLL_HANDLE,
+    TSS2_TCTI_CONTEXT,
+)
+
 
 TSS2_TCTI_TIMEOUT_BLOCK = -1
 TSS2_TCTI_TIMEOUT_NONE = 0x0
